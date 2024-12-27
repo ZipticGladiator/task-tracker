@@ -13,6 +13,10 @@ class TaskTrackerApp:
         # Load tasks from a JSON file or initialize an empty dictionary if the file doesn't exist
         self.tasks = self.load_tasks()
 
+        self.current_task = None
+        self.start_time = None
+        self.paused_time = None
+
         # UI Elements
         # Label to prompt the user to input a task name
         self.task_name_label = tk.Label(root, text="Task Name:")
@@ -25,6 +29,10 @@ class TaskTrackerApp:
         # Button to start tracking a task
         self.start_button = tk.Button(root, text="Start Task", command=self.start_task)
         self.start_button.pack(pady=5)
+
+        # Button to pause tracking a task
+        self.pause_button = tk.Button(root, text="Pause Task", command=self.pause_task)
+        self.pause_button.pack(pady=5)
 
         # Button to stop tracking a task
         self.stop_button = tk.Button(root, text="Stop Task", command=self.stop_task)
@@ -46,6 +54,13 @@ class TaskTrackerApp:
         self.chart_button = tk.Button(root, text="Show Task Chart", command=self.show_chart)
         self.chart_button.pack(pady=5)
 
+        # Label to display the elapsed time
+        self.elapsed_time_label = tk.Label(root, text="Elapsed Time: 0s")
+        self.elapsed_time_label.pack(pady=5)
+
+        # Start the update loop for the elapsed time
+        self.update_elapsed_time()
+
         # Update the task list initially
         self.update_task_list()
 
@@ -63,7 +78,6 @@ class TaskTrackerApp:
             json.dump(self.tasks, f, indent=4)
 
     def start_task(self):
-        # Start tracking a new task or resume tracking an existing task
         task_name = self.task_name_entry.get().strip()
 
         # Validate input
@@ -72,36 +86,40 @@ class TaskTrackerApp:
             return
 
         # Check if the task is already running
-        if task_name in self.tasks and 'start_time' in self.tasks[task_name]:
-            messagebox.showinfo("Task Running", f"Task '{task_name}' is already running.")
-            return
-
-        # Initialize or update the task
-        self.tasks[task_name] = self.tasks.get(task_name, {"total_time": 0})
-        self.tasks[task_name]['start_time'] = time.time()
+        if self.current_task and self.paused_time:
+            # Resume the paused task
+            self.start_time += time.time() - self.paused_time
+            self.paused_time = None
+        else:
+            # Start a new task
+            self.current_task = task_name
+            self.start_time = time.time()
+        self.task_name_entry.delete(0, tk.END)
         messagebox.showinfo("Task Started", f"Started task '{task_name}'.")
         self.update_task_list()
 
+    def pause_task(self):
+        if self.current_task and not self.paused_time:
+            self.paused_time = time.time()
+            messagebox.showinfo("Task Paused", f"Paused task '{self.current_task}'.")
+        elif not self.current_task:
+            messagebox.showwarning("No Task Running", "No task is currently running to pause.")
+
     def stop_task(self):
-        # Stop tracking a running task and update its total time
-        task_name = self.task_name_entry.get().strip()
-
-        # Validate input
-        if not task_name:
-            messagebox.showwarning("Input Error", "Task name cannot be empty!")
-            return
-
-        # Check if the task is running
-        if task_name not in self.tasks or 'start_time' not in self.tasks[task_name]:
-            messagebox.showwarning("Task Not Running", f"Task '{task_name}' is not running.")
-            return
-
-        # Calculate elapsed time and update total time
-        elapsed = time.time() - self.tasks[task_name]['start_time']
-        self.tasks[task_name]['total_time'] += elapsed
-        self.tasks[task_name].pop('start_time', None)
-        messagebox.showinfo("Task Stopped", f"Stopped task '{task_name}'. Total time: {self.tasks[task_name]['total_time']:.2f} seconds.")
-        self.update_task_list()
+        if self.current_task:
+            end_time = time.time()
+            elapsed_time = end_time - self.start_time
+            if self.current_task in self.tasks:
+                self.tasks[self.current_task]['total_time'] += elapsed_time
+            else:
+                self.tasks[self.current_task] = {'total_time': elapsed_time}
+            messagebox.showinfo("Task Stopped", f"Stopped task '{self.current_task}'.")
+            self.current_task = None
+            self.start_time = None
+            self.paused_time = None
+            self.update_task_list()
+        else:
+            messagebox.showwarning("No Task Running", "No task is currently running to stop.")
 
     def show_tasks(self):
         # Refresh the task list in the UI
@@ -112,7 +130,7 @@ class TaskTrackerApp:
         self.task_list.delete(0, tk.END)
         for task_name, info in self.tasks.items():
             total_time = info.get('total_time', 0)
-            running = ' (Running)' if 'start_time' in info else ''
+            running = ' (Running)' if task_name == self.current_task and not self.paused_time else ''
             self.task_list.insert(tk.END, f"{task_name}: {total_time:.2f} seconds{running}")
 
     def export_tasks(self):
@@ -137,6 +155,12 @@ class TaskTrackerApp:
         plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
         plt.show()
+
+    def update_elapsed_time(self):
+        if self.current_task and not self.paused_time:
+            elapsed_time = int(time.time() - self.start_time)
+            self.elapsed_time_label.config(text=f"Elapsed Time: {elapsed_time}s")
+        self.root.after(1000, self.update_elapsed_time)
 
 if __name__ == "__main__":
     # Initialize the main application window
